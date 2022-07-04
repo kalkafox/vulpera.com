@@ -4,17 +4,20 @@ import { WebglAddon } from "xterm-addon-webgl";
 import ansiEscapes from "ansi-escapes";
 import { updateSpring } from "./utils";
 
-import io from "socket.io-client";
-
 const cliSpinners = require("cli-spinners");
 const c = require("ansi-colors");
 const parsePath = require("parse-path");
 const fitAddon = new FitAddon();
 
 let command = "";
-let prompt = `⌨️  ${c.yellow("[")}${c.green("oiku")}@${c.cyan(
-  "vulpera.com"
-)}${c.yellow("]")}:${c.magenta("~/")}» `;
+
+let currentFingerprint = "";
+
+let user = "oiku";
+
+const getUser = () => {
+  return user;
+};
 
 const color1 = c.yellow;
 const color2 = c.yellowBright;
@@ -50,7 +53,7 @@ const motd = (term, version) => {
   term.writeln(
     [
       `${intro.join("\r\n")}\r\n\t Version: ${c.green(version)} `,
-      `\r\nNew and improved with React™ and React Spring™.\r\n`,
+      `\r\nNew and ${c.italic("improved")}™ with React and React Spring.\r\n`,
     ].join("\r\n")
   );
 };
@@ -81,7 +84,11 @@ const commands = {
     description: "Show help",
     action: (term) => {
       for (let command in commands) {
-        term.writeln(`${command}\t...........${commands[command].description}`);
+        term.writeln(
+          `${c.cyan(command)}${c.cyanBright(
+            `\t\t...........${commands[command].description}`
+          )}`
+        );
       }
       term.writeln("");
       TermApp.prompt(term);
@@ -236,6 +243,12 @@ const commands = {
           for (let line of data.split("\n")) {
             term.writeln(line);
           }
+        } else {
+          term.writeln(
+            `${c.red("Error")}: ${res.status} ${
+              res.statusText
+            } \r\n${await res.text()}`
+          );
         }
 
         TermApp.onData(mainPrompt, term);
@@ -245,6 +258,160 @@ const commands = {
         term.writeln("❌  Usage: curl <url>");
         TermApp.prompt(term);
       }
+    },
+  },
+  user: {
+    description: `Have the Vol'dunOS system recognize you indefinitely. \r\n\t\t\t...${c.yellow(
+      "(Warning: this cannot be undone.... [not really] Here be Sethrak.)"
+    )}`,
+    action: async (term, params = []) => {
+      // this is extensive because in theory, the rule of thumb is to never trust
+      // the client for anything.
+      // i'm not worried about fingerprint spoofing, but the system encourages
+      // some sort of label as part of the immersion
+      if (params && params.length > 0) {
+        const userExists = async () => {
+          const res = await fetch("api/user/get", {
+            headers: {
+              "x-fingerprint": currentFingerprint,
+            },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            console.log(data);
+            if (data.name === user) {
+              return true;
+            }
+          } else {
+            return false;
+          }
+          return false;
+        };
+
+        const exists = await userExists();
+
+        if (exists) {
+          term.writeln(`But you already have a username...`);
+          TermApp.prompt(term);
+          return;
+        }
+
+        prompt_dispose.dispose();
+
+        term.write(
+          `${c.yellow(
+            "Warning:"
+          )} You are about to be recognized by this system as ${
+            params[0]
+          }.\r\nIf you agree that this is your true destiny, and wish to continue on to the path ahead, confirm with (Y/N): `
+        );
+
+        const prompt = term.onData(async (e) => {
+          switch (e) {
+            case "Y":
+            case "y":
+              term.writeln("");
+              const res = await fetch("api/user/set", {
+                method: "POST",
+                body: JSON.stringify({
+                  name: params[0],
+                  fingerprint: currentFingerprint,
+                }),
+              });
+              if (res.ok) {
+                term.writeln("User recognized!");
+              } else {
+                term.writeln(
+                  `${c.red("Error")}: ${res.status} ${res.statusText}`
+                );
+              }
+
+              user = params[0];
+
+              term.writeln(
+                `${c.green(
+                  "✓"
+                )} You are now recognized as ${user}. Don't make any funny surprises. -Korthek`
+              );
+              term.writeln("");
+              prompt.dispose();
+              TermApp.onData(mainPrompt, term);
+              TermApp.prompt(term);
+              break;
+            case "N":
+            case "n":
+              term.writeln("");
+              term.writeln(`${c.red("✗")} You have not been recognized`);
+              term.writeln("");
+              prompt.dispose();
+              TermApp.onData(mainPrompt, term);
+              TermApp.prompt(term);
+              break;
+            default:
+              term.writeln("Please confirm with (Y/N): ");
+          }
+        });
+      } else {
+        term.writeln(commands.user.description);
+        term.writeln("❌  Usage: user <user>");
+      }
+    },
+  },
+  u_purge: {
+    description:
+      "Have the Vol'dunOS system completely forget everything about you, which is just your user in the database.",
+    action: async (term, params = []) => {
+      if (user === "oiku") {
+        term.writeln(
+          `${c.red("Error")}: You cannot purge yourself, silly Oiku.`
+        );
+        TermApp.prompt(term);
+        return;
+      }
+      prompt_dispose.dispose();
+      term.write(
+        `\r\n${c.yellow("Warning:")} This will purge the user ${c.bold(
+          user
+        )} from the Vol'dunOS database, and it's up for grabs after that.\r\nYou can immediately reset it, but you'll have to re-register. using the ${c.bold(
+          "user"
+        )} command.\r\nAre you sure you want to do this? (Y/N): `
+      );
+      const prompt = term.onData(async (e) => {
+        switch (e) {
+          case "Y":
+          case "y":
+            term.writeln("");
+            const res = await fetch("api/user/purge", {
+              headers: {
+                "x-fingerprint": currentFingerprint,
+              },
+            });
+            if (res.ok) {
+              const data = await res.json();
+              term.writeln(data.message);
+              await getUserIfExists(currentFingerprint);
+            } else {
+              term.writeln(
+                `${c.red("Error")}: ${res.status} ${res.statusText}`
+              );
+            }
+            user = "oiku";
+            TermApp.onData(mainPrompt, term);
+            TermApp.prompt(term);
+            prompt.dispose();
+            break;
+          case "N":
+          case "n":
+            term.writeln("");
+            TermApp.onData(mainPrompt, term);
+            TermApp.prompt(term);
+            prompt.dispose();
+            break;
+          default:
+            term.writeln("Please enter Y or N.");
+            break;
+        }
+      });
     },
   },
 };
@@ -269,7 +436,8 @@ const mainPrompt = (e, term, ctx) => {
       TermApp.onData(mainPrompt, term);
       break;
     case "\u007F": // Backspace
-      if (term._core.buffer.x > c.unstyle(prompt).length) {
+      // the magic 3 is because of the ⌨️ character
+      if (term._core.buffer.x > c.unstyle(prompt).length - 3) {
         term.write("\b \b");
         if (command.length > 0) {
           command = command.substr(0, command.length - 1);
@@ -358,6 +526,9 @@ export const TermApp = {
     window.localStorage.setItem("history", JSON.stringify(history));
   },
   prompt: (term) => {
+    const prompt = `⌨️  ${c.yellow("[")}${c.green(getUser())}@${c.cyan(
+      "vulpera.com"
+    )}${c.yellow("]")}:${c.magenta("~/")}» `;
     term.write(`${prompt}${command.length > 0 ? command : ""}`);
   },
   intro: (term, version) => {
@@ -403,7 +574,23 @@ export const TermApp = {
   },
 };
 
+const getUserIfExists = async (fingerprint) => {
+  const res = await fetch("api/user/get", {
+    headers: { "x-fingerprint": fingerprint },
+  });
+  if (res.ok) {
+    const data = await res.json();
+    console.log(data.name);
+    user = data.name;
+  } else {
+    console.log(`Failed to get user: ${res.status}`);
+  }
+};
+
 export const assembleTerminal = async (states) => {
+  currentFingerprint = states.mainContext.fingerprint;
+  await getUserIfExists(states.mainContext.fingerprint);
+  console.log("got the user");
   const terminal = TermApp.init();
   if (window.localStorage.getItem("history") != null) {
     history = JSON.parse(window.localStorage.getItem("history"));

@@ -18,7 +18,18 @@ const Main = () => {
   const [terminalReady, setTerminalReady] = useState(false);
   const [doIntro, setDoIntro] = useState(true);
 
+  const [fingerprint, setFingerprint] = useState("");
+
   useEffect(() => {
+    const loadFpJS = async () => {
+      const FingerprintJS = await import("@fingerprintjs/fingerprintjs");
+      const fpJS = await FingerprintJS.load();
+      const fp = await fpJS.get();
+      setFingerprint(fp.visitorId);
+    };
+
+    loadFpJS();
+
     // Check if the user has chosen not to see the intro
     if (window.localStorage.getItem("doIntro") !== null) {
       console.log(window.localStorage.getItem("doIntro"));
@@ -105,6 +116,7 @@ const Main = () => {
           progressValue,
           terminalReady,
           setTerminalReady,
+          fingerprint: fingerprint,
         }}>
         <div className="fixed w-screen h-screen bg-black"></div>
         {loadVisible && (
