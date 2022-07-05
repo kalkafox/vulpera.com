@@ -26,8 +26,6 @@ const handler = async (req, res) => {
         )} or ${c.cyan(last)}`
       );
   }
-
-  console.log(url);
 };
 
 export default handler;

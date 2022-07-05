@@ -4,10 +4,14 @@ import { WebglAddon } from "xterm-addon-webgl";
 import ansiEscapes from "ansi-escapes";
 import { updateSpring } from "./utils";
 
+import { io } from "socket.io-client";
+
 const cliSpinners = require("cli-spinners");
 const c = require("ansi-colors");
 const parsePath = require("parse-path");
 const fitAddon = new FitAddon();
+
+let currentStates = {};
 
 let command = "";
 
@@ -178,6 +182,16 @@ const commands = {
 
       const prompt = term.onData((e) => {
         switch (e) {
+          // case Ctrl+Q
+          case "\x11":
+            term.writeln("\r\nForce quitting");
+            clearInterval(interval);
+            clearInterval(changeTextInterval);
+            prompt.dispose();
+            TermApp.onData(mainPrompt, term);
+            TermApp.prompt(term);
+            term.write(ansiEscapes.cursorShow);
+
           case "\u0003": // Ctrl+C
             clearInterval(interval);
             clearInterval(changeTextInterval);
@@ -193,21 +207,37 @@ const commands = {
   socket: {
     description: "Test socket",
     action: async (term, params = []) => {
-      term.writeln(
-        `❌  ${c.red("Sorry, this command is still being worked on.")}`
-      );
-      TermApp.prompt(term);
-
+      term.writeln("Under construction.");
+      return;
       // prompt_dispose.dispose();
       // const res = await fetch("/api/socket");
       // let socket = io();
+      // console.log(socket);
+
+      // const prompt = term.onData((e) => {
+      //   switch (e) {
+      //     // case Ctrl+Q
+      //     case "\x11":
+      //       term.writeln("\r\nForce quitting");
+      //       socket.close();
+      //       prompt.dispose();
+      //       break;
+      //   }
+      //   socket.emit("message", e);
+      // });
+
+      // socket.on("message", (e) => {
+      //   term.write(e);
+      // });
+
       // socket.on("connect", () => {
       //   term.writeln("Connected!");
       // });
 
       // socket.on("disconnect", () => {
       //   term.writeln("Disconnected!");
-      //   prompt_dispose = TermApp.onData(mainPrompt, term);
+      //   TermApp.onData(mainPrompt, term);
+      //   TermApp.prompt(term);
       // });
       // console.log(res);
     },
@@ -261,8 +291,8 @@ const commands = {
     },
   },
   user: {
-    description: `Have the Vol'dunOS system recognize you indefinitely. \r\n\t\t\t...${c.yellow(
-      "(Warning: this cannot be undone.... [not really] Here be Sethrak.)"
+    description: `Have the Vol'dunOS system recognize you indefinitely. \r\n\t\t\t${c.yellow(
+      "...(Warning: this cannot be undone.... [not really] Here be Sethrak.)"
     )}`,
     action: async (term, params = []) => {
       // this is extensive because in theory, the rule of thumb is to never trust
@@ -274,11 +304,11 @@ const commands = {
           const res = await fetch("api/user/get", {
             headers: {
               "x-fingerprint": currentFingerprint,
+              name: params[0],
             },
           });
           if (res.ok) {
             const data = await res.json();
-            console.log(data);
             if (data.name === user) {
               return true;
             }
@@ -319,20 +349,24 @@ const commands = {
                 }),
               });
               if (res.ok) {
-                term.writeln("User recognized!");
+                const data = await res.json();
+                if (data.message.includes("registered")) {
+                  term.writeln(`❌ ${c.red("Error")}: ${data.message}`);
+                } else {
+                  user = params[0];
+
+                  term.writeln(
+                    `${c.green(
+                      "✓"
+                    )} You are now recognized as ${user}. Don't make any funny surprises. -Korthek`
+                  );
+                }
               } else {
                 term.writeln(
                   `${c.red("Error")}: ${res.status} ${res.statusText}`
                 );
               }
 
-              user = params[0];
-
-              term.writeln(
-                `${c.green(
-                  "✓"
-                )} You are now recognized as ${user}. Don't make any funny surprises. -Korthek`
-              );
               term.writeln("");
               prompt.dispose();
               TermApp.onData(mainPrompt, term);
@@ -414,10 +448,54 @@ const commands = {
       });
     },
   },
+  chamber: {
+    description: `Enter the Chamber of Anamnesis... Special agreement is required.`,
+    action: async (term, params = []) => {
+      prompt_dispose.dispose();
+      term.writeln("You are about to enter the Chamber of Anamnesis.");
+      term.writeln("You accept everything that will happen from now on.");
+      const prompt = term.onData(async (e) => {
+        switch (e) {
+          case "Y":
+          case "y":
+            const audio = new Audio();
+            audio.src = "audio/another.ogg";
+            audio.onloadeddata = () => {
+              currentStates.vulperaContext.setMouseSpringActive(false);
+              term.write("\r\nYou have made a wise decision.\r\n");
+              audio.play();
+              currentStates.vulperaContext.terminalSpringApi.start({
+                opacity: 0,
+              });
+              setTimeout(() => {
+                currentStates.vulperaContext.setVideoState({
+                  scale: 2,
+                  opacity: 1,
+                });
+              }, 1500);
+            };
+
+            audio.onended = () => {
+              audio.currentTime = 2;
+              audio.play();
+            };
+          case "N":
+          case "n":
+            term.writeln("");
+            TermApp.onData(mainPrompt, term);
+            TermApp.prompt(term);
+            prompt.dispose();
+            break;
+          default:
+            term.writeln("Please enter Y or N.");
+            break;
+        }
+      });
+    },
+  },
 };
 
 const secondPrompt = (e, term, ctx) => {
-  console.log(e);
   switch (e) {
     case "\u0003": // Ctrl+C
       term.writeln("^C");
@@ -471,10 +549,7 @@ const mainPrompt = (e, term, ctx) => {
         command = history[historyIndex];
         try {
           term.write(command);
-        } catch (e) {
-          console.log(historyIndex);
-          console.log(e);
-        }
+        } catch (e) {}
       }
       break;
     case "\r": // Enter
@@ -539,7 +614,6 @@ export const TermApp = {
     term.writeln("");
   },
   runCommand: (term) => {
-    console.log(history);
     const input = command.split(" ");
     const prefix = input[0];
     const params = input.slice(1);
@@ -580,7 +654,6 @@ const getUserIfExists = async (fingerprint) => {
   });
   if (res.ok) {
     const data = await res.json();
-    console.log(data.name);
     user = data.name;
   } else {
     console.log(`Failed to get user: ${res.status}`);
@@ -588,9 +661,9 @@ const getUserIfExists = async (fingerprint) => {
 };
 
 export const assembleTerminal = async (states) => {
+  currentStates = states;
   currentFingerprint = states.mainContext.fingerprint;
   await getUserIfExists(states.mainContext.fingerprint);
-  console.log("got the user");
   const terminal = TermApp.init();
   if (window.localStorage.getItem("history") != null) {
     history = JSON.parse(window.localStorage.getItem("history"));
@@ -638,9 +711,7 @@ export const assembleTerminal = async (states) => {
     const webglAddon = new WebglAddon();
     terminal.loadAddon(webglAddon);
     console.log("WebGL Enabled!");
-  } catch (e) {
-    console.log(e);
-  }
+  } catch (e) {}
 
   states.setTerminalOpen(true);
   states.setTerminal(terminal);

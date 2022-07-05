@@ -34,6 +34,8 @@ const Vulpera = () => {
     opacity: 0,
   }));
 
+  const [mouseSpringActive, setMouseSpringActive] = useState(true);
+
   const vsa = videoSpringApi;
   const cs = contentSpringApi;
   const tsa = terminalSpringApi;
@@ -55,7 +57,7 @@ const Vulpera = () => {
   }, [mainContext.progress]);
 
   const mouseHandler = (e) => {
-    if (mainContext.progress) {
+    if (mainContext.progress && mouseSpringActive) {
       switch (e.type) {
         case "mouseenter":
           updateSpring(vsa, { ...videoState, scale: 1.1 });
@@ -85,6 +87,7 @@ const Vulpera = () => {
           setVideoState,
           terminalSpring,
           terminalSpringApi,
+          setMouseSpringActive,
         }}>
         <div
           onMouseEnter={mouseHandler}

@@ -24,7 +24,6 @@ const TerminalComponent = () => {
   useEffect(() => {
     if (terminal) {
       terminal.dispose();
-      console.log("lul");
       setTerminal(null);
     }
   }, []);
