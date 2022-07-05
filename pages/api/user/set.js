@@ -5,11 +5,11 @@ const handler = async (req, res) => {
     res.status(405).send("❌  Method not allowed");
     return;
   }
+  const data = JSON.parse(req.body);
   if (data.name === "oiku") {
     res.status(403).send("❌  Forbidden");
     return;
   }
-  const data = JSON.parse(req.body);
   if (
     !data ||
     data === null ||
